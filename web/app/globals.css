@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #09090b;
+  --surface: #18181b;
+  --surface-hover: #27272a;
+  --primary: #18181b;
+  --secondary: #27272a;
+  --cta: #a3e635;
+  --cta-hover: #bef264;
+  --text: #fafafa;
+  --text-secondary: #d4d4d8;
+  --text-muted: #71717a;
+  --border: #27272a;
+  --border-subtle: #1f1f23;
+  --accent-blue: #60a5fa;
+  --accent-amber: #fbbf24;
+  --accent-rose: #fb7185;
+  --accent-violet: #a78bfa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.025em;
+}
+
+.font-serif {
+  font-family: 'Newsreader', Georgia, serif;
+}
+
+@layer components {
+  .section-label {
+    @apply text-[11px] font-medium uppercase tracking-widest text-text-muted;
+  }
+
+  .divider {
+    @apply border-t border-border;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::selection {
+  background-color: rgba(163, 230, 53, 0.2);
+  color: var(--text);
+}
