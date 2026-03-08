@@ -61,7 +61,12 @@ class RecordingProvider extends ChangeNotifier {
             _state != RecordingState.connecting) {
           final completedTranscript = message['transcript'] as String?;
           if (completedTranscript != null && completedTranscript.isNotEmpty) {
-            _finalTranscript = completedTranscript;
+            // Append to existing transcript instead of overwriting
+            if (_finalTranscript.isNotEmpty) {
+              _finalTranscript += ' $completedTranscript';
+            } else {
+              _finalTranscript = completedTranscript;
+            }
             _partialTranscript = '';
           }
           _state = RecordingState.completed;

@@ -49,10 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (recordingProvider.isRecording) {
       await recordingProvider.stopRecording();
-    } else if (recordingProvider.state == RecordingState.completed ||
-        recordingProvider.state == RecordingState.error) {
-      recordingProvider.reset();
     } else {
+      // startRecording clears the transcript internally, so no need to reset first
       await recordingProvider.startRecording(
         authProvider,
         gain: settings.recordingGain,

@@ -15,8 +15,8 @@ const audioBucket = "mino-audio"
 
 // Client wraps the MinIO SDK for object storage operations.
 type Client struct {
-	mc        *minio.Client
-	publicURL string
+	mc          *minio.Client
+	internalURL string // internal base URL used by the server-side proxy
 }
 
 // NewClient initialises a MinIO client and ensures the audio bucket exists.
@@ -42,10 +42,20 @@ func NewClient(cfg *config.MinIOConfig) (*Client, error) {
 		}
 	}
 
-	return &Client{mc: mc, publicURL: cfg.PublicURL}, nil
+	// Build the internal base URL from the endpoint so the web proxy can
+	// always reach MinIO directly, regardless of MINIO_PUBLIC_URL.
+	scheme := "http"
+	if cfg.Secure {
+		scheme = "https"
+	}
+	internalURL := fmt.Sprintf("%s://%s", scheme, cfg.Endpoint)
+
+	return &Client{mc: mc, internalURL: internalURL}, nil
 }
 
-// UploadAudio stores an audio blob (e.g. opus/webm) and returns its accessible URL.
+// UploadAudio stores an audio blob (e.g. opus/webm) and returns its internal URL.
+// The returned URL points to the MinIO endpoint directly so the Next.js proxy
+// can fetch it server-side; it is never exposed to the browser as-is.
 func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Reader, size int64, contentType string) (string, error) {
 	_, err := c.mc.PutObject(ctx, audioBucket, objectKey, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -54,10 +64,7 @@ func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Re
 		return "", fmt.Errorf("minio put object: %w", err)
 	}
 
-	if c.publicURL != "" {
-		return fmt.Sprintf("%s/%s/%s", c.publicURL, audioBucket, objectKey), nil
-	}
-	return fmt.Sprintf("/%s/%s", audioBucket, objectKey), nil
+	return fmt.Sprintf("%s/%s/%s", c.internalURL, audioBucket, objectKey), nil
 }
 
 // DeleteAudio removes an audio object from the bucket.
