@@ -194,7 +194,6 @@ services:
       - mino_net
     environment:
       API_URL: http://backend:8000
-      MINIO_INTERNAL_HOST: minio
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:

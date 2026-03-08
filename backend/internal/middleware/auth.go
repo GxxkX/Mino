@@ -14,19 +14,29 @@ const RoleKey = "role"
 
 func Auth(jwtMgr *jwtpkg.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var token string
+
+		// 1. Try Authorization header (Bearer <token>)
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "missing authorization header"})
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+				token = parts[1]
+			}
+		}
+
+		// 2. Fallback to ?token= query param (for <audio>/<img> elements
+		//    that cannot send custom headers).
+		if token == "" {
+			token = c.Query("token")
+		}
+
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "missing authorization"})
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid authorization format"})
-			return
-		}
-
-		claims, err := jwtMgr.Validate(parts[1])
+		claims, err := jwtMgr.Validate(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid or expired token"})
 			return

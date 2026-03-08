@@ -15,8 +15,7 @@ const audioBucket = "mino-audio"
 
 // Client wraps the MinIO SDK for object storage operations.
 type Client struct {
-	mc          *minio.Client
-	internalURL string // internal base URL used by the server-side proxy
+	mc *minio.Client
 }
 
 // NewClient initialises a MinIO client and ensures the audio bucket exists.
@@ -42,20 +41,12 @@ func NewClient(cfg *config.MinIOConfig) (*Client, error) {
 		}
 	}
 
-	// Build the internal base URL from the endpoint so the web proxy can
-	// always reach MinIO directly, regardless of MINIO_PUBLIC_URL.
-	scheme := "http"
-	if cfg.Secure {
-		scheme = "https"
-	}
-	internalURL := fmt.Sprintf("%s://%s", scheme, cfg.Endpoint)
-
-	return &Client{mc: mc, internalURL: internalURL}, nil
+	return &Client{mc: mc}, nil
 }
 
-// UploadAudio stores an audio blob (e.g. opus/webm) and returns its internal URL.
-// The returned URL points to the MinIO endpoint directly so the Next.js proxy
-// can fetch it server-side; it is never exposed to the browser as-is.
+// UploadAudio stores an audio blob (e.g. opus/webm) and returns the object key.
+// The actual URL is never stored — clients access audio via the backend proxy
+// endpoint GET /v1/conversations/:id/audio.
 func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Reader, size int64, contentType string) (string, error) {
 	_, err := c.mc.PutObject(ctx, audioBucket, objectKey, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -64,7 +55,23 @@ func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Re
 		return "", fmt.Errorf("minio put object: %w", err)
 	}
 
-	return fmt.Sprintf("%s/%s/%s", c.internalURL, audioBucket, objectKey), nil
+	// Store only the object key in the DB — the backend proxy resolves it.
+	return objectKey, nil
+}
+
+// GetAudio retrieves an audio object from MinIO. The caller must close the
+// returned ReadCloser. Also returns content-type and content-length.
+func (c *Client) GetAudio(ctx context.Context, objectKey string) (io.ReadCloser, string, int64, error) {
+	obj, err := c.mc.GetObject(ctx, audioBucket, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("minio get object: %w", err)
+	}
+	info, err := obj.Stat()
+	if err != nil {
+		obj.Close()
+		return nil, "", 0, fmt.Errorf("minio stat object: %w", err)
+	}
+	return obj, info.ContentType, info.Size, nil
 }
 
 // DeleteAudio removes an audio object from the bucket.

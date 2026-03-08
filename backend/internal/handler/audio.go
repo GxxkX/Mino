@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -43,6 +45,11 @@ func (h *ConversationHandler) List(c *gin.Context) {
 	if convs == nil {
 		convs = []*model.Conversation{}
 	}
+	// Rewrite audioUrl to the backend proxy endpoint so clients never see
+	// raw MinIO URLs (works for both old public URLs and new object keys).
+	for _, conv := range convs {
+		rewriteAudioURL(conv)
+	}
 	resp.Paginated(c, convs, total, page, limit)
 }
 
@@ -59,7 +66,64 @@ func (h *ConversationHandler) Get(c *gin.Context) {
 		resp.NotFound(c, "conversation not found, reason: no record with given id")
 		return
 	}
+	rewriteAudioURL(conv)
 	resp.OK(c, conv)
+}
+
+// StreamAudio proxies the audio file from MinIO to the client.
+// GET /v1/conversations/:id/audio
+func (h *ConversationHandler) StreamAudio(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	id := c.Param("id")
+
+	if h.storage == nil {
+		resp.InternalError(c, "audio storage not configured")
+		return
+	}
+
+	conv, err := h.convRepo.FindByID(id, userID)
+	if err != nil {
+		resp.InternalError(c, "failed to fetch conversation, reason: "+err.Error())
+		return
+	}
+	if conv == nil {
+		resp.NotFound(c, "conversation not found")
+		return
+	}
+	if conv.AudioURL == nil || *conv.AudioURL == "" {
+		resp.NotFound(c, "no audio available for this conversation")
+		return
+	}
+
+	objectKey := extractObjectKey(*conv.AudioURL, userID, id)
+	reader, contentType, size, err := h.storage.GetAudio(c.Request.Context(), objectKey)
+	if err != nil {
+		resp.InternalError(c, "failed to retrieve audio: "+err.Error())
+		return
+	}
+	defer reader.Close()
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Length", fmt.Sprintf("%d", size))
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Status(http.StatusOK)
+	io.Copy(c.Writer, reader)
+}
+
+// rewriteAudioURL replaces the stored audio URL (MinIO internal URL, public
+// URL, or object key) with the backend proxy path so clients always use
+// GET /v1/conversations/:id/audio.
+func rewriteAudioURL(conv *model.Conversation) {
+	if conv == nil || conv.AudioURL == nil || *conv.AudioURL == "" {
+		return
+	}
+	proxyURL := fmt.Sprintf("/v1/conversations/%s/audio", conv.ID)
+	conv.AudioURL = &proxyURL
 }
 
 func (h *ConversationHandler) Delete(c *gin.Context) {
