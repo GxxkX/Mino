@@ -29,6 +29,11 @@ type changePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
+type changeUsernameRequest struct {
+	NewUsername string `json:"new_username" binding:"required,min=2"`
+	Password   string `json:"password" binding:"required"`
+}
+
 func (h *AuthHandler) SignIn(c *gin.Context) {
 	var req signInRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -78,4 +83,19 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	resp.OK(c, gin.H{"message": "password changed"})
+}
+
+func (h *AuthHandler) ChangeUsername(c *gin.Context) {
+	var req changeUsernameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.BadRequest(c, err.Error())
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	if err := h.authService.ChangeUsername(userID, req.NewUsername, req.Password); err != nil {
+		resp.BadRequest(c, err.Error())
+		return
+	}
+	resp.OK(c, gin.H{"message": "username changed"})
 }

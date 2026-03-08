@@ -147,13 +147,42 @@ func (h *ChatHandler) SendStream(c *gin.Context) {
 		})
 	}
 
-	// Step 3: Stream LLM tokens
-	reply, llmErr := h.chatService.GetLLMService().ChatAgentStream(ctx, req.Message, retrievedContext, func(chunk string) {
-		writeSSEEvent(c.Writer, map[string]interface{}{
-			"type":    "chunk",
-			"content": chunk,
+	// Step 3: Stream LLM tokens (with tool calling if tools are registered)
+	var reply string
+	var llmErr error
+
+	toolRegistry := h.chatService.GetToolRegistry()
+	if toolRegistry != nil {
+		toolDefs := toolRegistry.DefinitionsForScope("chat")
+		if len(toolDefs) > 0 {
+			reply, llmErr = h.chatService.GetLLMService().ChatAgentWithToolsStream(
+				ctx, req.Message, retrievedContext, toolDefs,
+				func(name string, args map[string]interface{}) (*service.ToolResult, error) {
+					return toolRegistry.Execute(ctx, userID, name, args)
+				},
+				func(chunk string) {
+					writeSSEEvent(c.Writer, map[string]interface{}{
+						"type":    "chunk",
+						"content": chunk,
+					})
+				},
+			)
+		} else {
+			reply, llmErr = h.chatService.GetLLMService().ChatAgentStream(ctx, req.Message, retrievedContext, func(chunk string) {
+				writeSSEEvent(c.Writer, map[string]interface{}{
+					"type":    "chunk",
+					"content": chunk,
+				})
+			})
+		}
+	} else {
+		reply, llmErr = h.chatService.GetLLMService().ChatAgentStream(ctx, req.Message, retrievedContext, func(chunk string) {
+			writeSSEEvent(c.Writer, map[string]interface{}{
+				"type":    "chunk",
+				"content": chunk,
+			})
 		})
-	})
+	}
 
 	if llmErr != nil && reply == "" {
 		writeSSEEvent(c.Writer, map[string]interface{}{

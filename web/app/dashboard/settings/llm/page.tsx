@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,13 +10,13 @@ import { Brain, Eye, EyeOff, Check, AlertCircle, Loader2, Zap, Cpu, Server } fro
 
 const PROVIDER_ICONS: Record<string, typeof Zap> = {
   openai: Zap,
-  zhipu: Cpu,
+  anthropic: Cpu,
   ollama: Server,
 };
 
 const PROVIDERS = [
   { id: 'openai' },
-  { id: 'zhipu' },
+  { id: 'anthropic' },
   { id: 'ollama' },
 ] as const;
 
@@ -37,7 +37,26 @@ export default function LLMSettingsPage() {
   const [model, setModel] = useState('');
   const [embeddingModel, setEmbeddingModel] = useState('');
 
-  // Load current config from backend
+  // Load config for a specific provider from backend
+  const loadProviderConfig = useCallback((providerId: string) => {
+    settingsApi
+      .getLLMConfig(providerId)
+      .then((cfg) => {
+        setApiKey(cfg.api_key || '');
+        setBaseUrl(cfg.base_url || '');
+        setModel(cfg.model || '');
+        setEmbeddingModel(cfg.embedding_model || '');
+      })
+      .catch(() => {
+        // Reset fields if provider has no saved config
+        setApiKey('');
+        setBaseUrl('');
+        setModel('');
+        setEmbeddingModel('');
+      });
+  }, []);
+
+  // Load current active config on mount
   useEffect(() => {
     settingsApi
       .getLLMConfig()
@@ -53,6 +72,15 @@ export default function LLMSettingsPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // When user switches provider, fetch that provider's config
+  function handleProviderSwitch(id: ProviderID) {
+    setProvider(id);
+    setShowKey(false);
+    setSaved(false);
+    setError('');
+    loadProviderConfig(id);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -86,7 +114,7 @@ export default function LLMSettingsPage() {
   function providerDesc(id: ProviderID) {
     const map: Record<ProviderID, string> = {
       openai: t.llmSettings.openaiDesc,
-      zhipu: t.llmSettings.zhipuDesc,
+      anthropic: t.llmSettings.anthropicDesc,
       ollama: t.llmSettings.ollamaDesc,
     };
     return map[id];
@@ -122,7 +150,7 @@ export default function LLMSettingsPage() {
               return (
               <button
                 key={p.id}
-                onClick={() => setProvider(p.id)}
+                onClick={() => handleProviderSwitch(p.id)}
                 className={`relative flex flex-col items-center gap-1.5 p-4 rounded-lg border transition-all duration-150 cursor-pointer ${
                   provider === p.id
                     ? 'border-cta bg-cta/5'

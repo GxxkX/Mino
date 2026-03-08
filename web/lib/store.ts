@@ -56,7 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   settings: {
     theme: 'dark',
     language: 'zh-CN',
-    sttProvider: 'zhipu',
+    sttProvider: 'whisper',
     llmProvider: 'openai',
     llmModel: 'gpt-4o',
     cloudSync: true,

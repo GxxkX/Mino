@@ -18,11 +18,12 @@ type ChatSource struct {
 }
 
 type ChatService struct {
-	chatRepo    *repository.ChatRepository
-	convRepo    *repository.ConversationRepository
-	llmService  LLMProvider
-	vectorStore *VectorStoreService // nil if vector search is unavailable
-	logger      *logrus.Logger
+	chatRepo     *repository.ChatRepository
+	convRepo     *repository.ConversationRepository
+	llmService   LLMProvider
+	vectorStore  *VectorStoreService // nil if vector search is unavailable
+	toolRegistry *ToolRegistry       // nil if no tools registered
+	logger       *logrus.Logger
 }
 
 func NewChatService(
@@ -30,14 +31,16 @@ func NewChatService(
 	convRepo *repository.ConversationRepository,
 	llmService LLMProvider,
 	vectorStore *VectorStoreService,
+	toolRegistry *ToolRegistry,
 	logger *logrus.Logger,
 ) *ChatService {
 	return &ChatService{
-		chatRepo:    chatRepo,
-		convRepo:    convRepo,
-		llmService:  llmService,
-		vectorStore: vectorStore,
-		logger:      logger,
+		chatRepo:     chatRepo,
+		convRepo:     convRepo,
+		llmService:   llmService,
+		vectorStore:  vectorStore,
+		toolRegistry: toolRegistry,
+		logger:       logger,
 	}
 }
 
@@ -84,6 +87,11 @@ func (s *ChatService) GetMessages(sessionID, userID string) ([]*repository.ChatM
 // GetLLMService exposes the underlying LLMProvider for streaming use in handlers.
 func (s *ChatService) GetLLMService() LLMProvider {
 	return s.llmService
+}
+
+// GetToolRegistry exposes the tool registry for streaming handlers that need tool calling.
+func (s *ChatService) GetToolRegistry() *ToolRegistry {
+	return s.toolRegistry
 }
 
 func (s *ChatService) SendMessage(ctx context.Context, sessionID, userID, userMessage string) (*ChatResponse, error) {
@@ -159,7 +167,22 @@ func (s *ChatService) SendMessage(ctx context.Context, sessionID, userID, userMe
 		retrievedContext = strings.Join(contextParts, "\n\n")
 	}
 
-	reply, err := s.llmService.ChatAgent(ctx, userMessage, retrievedContext)
+	// Use tool-calling variant if tools are registered, otherwise plain ChatAgent.
+	var reply string
+	if s.toolRegistry != nil {
+		toolDefs := s.toolRegistry.DefinitionsForScope("chat")
+		if len(toolDefs) > 0 {
+			reply, err = s.llmService.ChatAgentWithTools(ctx, userMessage, retrievedContext, toolDefs,
+				func(name string, args map[string]interface{}) (*ToolResult, error) {
+					return s.toolRegistry.Execute(ctx, userID, name, args)
+				},
+			)
+		} else {
+			reply, err = s.llmService.ChatAgent(ctx, userMessage, retrievedContext)
+		}
+	} else {
+		reply, err = s.llmService.ChatAgent(ctx, userMessage, retrievedContext)
+	}
 	if err != nil {
 		reply = "I'm sorry, I'm having trouble connecting to the AI service right now. Please try again later. reason: " + err.Error()
 		sources = nil

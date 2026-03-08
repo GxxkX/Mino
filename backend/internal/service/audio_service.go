@@ -10,26 +10,24 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/mino/backend/internal/config"
-	"github.com/mino/backend/internal/model"
+	"github.com/mino/backend/internal/model" // used for Conversation
 	"github.com/mino/backend/internal/pkg/storage"
 	"github.com/mino/backend/internal/repository"
 )
 
 type AudioService struct {
-	convRepo    *repository.ConversationRepository
-	memRepo     *repository.MemoryRepository
-	taskRepo    *repository.TaskRepository
-	llmService  LLMProvider
-	vectorStore *VectorStoreService // nil if vector search is unavailable
-	storage     *storage.Client
-	cfg         *config.Config
-	logger      *logrus.Logger
+	convRepo       *repository.ConversationRepository
+	memTaskService *MemoryTaskService
+	llmService     LLMProvider
+	vectorStore    *VectorStoreService // nil if vector search is unavailable
+	storage        *storage.Client
+	cfg            *config.Config
+	logger         *logrus.Logger
 }
 
 func NewAudioService(
 	convRepo *repository.ConversationRepository,
-	memRepo *repository.MemoryRepository,
-	taskRepo *repository.TaskRepository,
+	memTaskService *MemoryTaskService,
 	llmService LLMProvider,
 	vectorStore *VectorStoreService,
 	storageClient *storage.Client,
@@ -37,14 +35,13 @@ func NewAudioService(
 	logger *logrus.Logger,
 ) *AudioService {
 	return &AudioService{
-		convRepo:    convRepo,
-		memRepo:     memRepo,
-		taskRepo:    taskRepo,
-		llmService:  llmService,
-		vectorStore: vectorStore,
-		storage:     storageClient,
-		cfg:         cfg,
-		logger:      logger,
+		convRepo:       convRepo,
+		memTaskService: memTaskService,
+		llmService:     llmService,
+		vectorStore:    vectorStore,
+		storage:        storageClient,
+		cfg:            cfg,
+		logger:         logger,
 	}
 }
 
@@ -119,59 +116,46 @@ func (s *AudioService) ProcessTranscript(ctx context.Context, userID, transcript
 	conv.Status = "completed"
 	s.convRepo.Update(conv)
 
-	var mems []*model.Memory
+	// Use MemoryTaskService for memory and task creation (shared with ChatAgent tools).
 	if len(result.Memories) > 0 {
+		var memInputs []MemoryInput
 		for _, m := range result.Memories {
-			cat := m.Category
-			mems = append(mems, &model.Memory{
-				UserID:         userID,
-				ConversationID: &conv.ID,
-				Content:        m.Content,
-				Category:       &cat,
-				Importance:     m.Importance,
+			memInputs = append(memInputs, MemoryInput{
+				Content:    m.Content,
+				Category:   m.Category,
+				Importance: m.Importance,
 			})
 		}
-		s.memRepo.CreateBatch(mems)
+		// CreateMemories handles DB persistence + vector store indexing internally.
+		if _, err := s.memTaskService.CreateMemories(ctx, userID, memInputs, &conv.ID); err != nil {
+			s.logger.Warnf("failed to create memories: %v", err)
+		}
 	}
 
 	if len(result.ActionItems) > 0 {
-		var tasks []*model.Task
+		var taskInputs []TaskInput
 		for _, item := range result.ActionItems {
-			tasks = append(tasks, &model.Task{
-				UserID:         userID,
-				ConversationID: &conv.ID,
-				Title:          item,
-				Status:         "pending",
-				Priority:       "medium",
+			taskInputs = append(taskInputs, TaskInput{
+				Title:    item,
+				Priority: "medium",
 			})
 		}
-		s.taskRepo.CreateBatch(tasks)
+		if _, err := s.memTaskService.CreateTasks(ctx, userID, taskInputs, &conv.ID); err != nil {
+			s.logger.Warnf("failed to create tasks: %v", err)
+		}
 	}
 
-	// Index conversation and memories into Milvus for semantic search (async, non-blocking).
+	// Index conversation into Milvus for semantic search (async, non-blocking).
+	// Memory indexing is already handled by MemoryTaskService.CreateMemories.
 	if s.vectorStore != nil {
 		go func() {
 			bgCtx := context.Background()
-
-			// Index the conversation transcript + summary
 			textToIndex := transcript
 			if result.Summary != "" {
 				textToIndex = result.Summary + "\n\n" + transcript
 			}
 			if err := s.vectorStore.IndexConversation(bgCtx, userID, conv.ID, textToIndex); err != nil {
 				s.logger.Warnf("failed to index conversation in Milvus: %v", err)
-			}
-
-			// Index memories
-			if len(result.Memories) > 0 {
-				var memIDs, memContents []string
-				for _, m := range mems {
-					memIDs = append(memIDs, m.ID)
-					memContents = append(memContents, m.Content)
-				}
-				if err := s.vectorStore.IndexMemories(bgCtx, userID, memIDs, memContents); err != nil {
-					s.logger.Warnf("failed to index memories in Milvus: %v", err)
-				}
 			}
 		}()
 	}

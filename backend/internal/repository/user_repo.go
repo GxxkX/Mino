@@ -80,3 +80,18 @@ func (r *UserRepository) UpdatePassword(id, passwordHash string) error {
 	}
 	return nil
 }
+
+func (r *UserRepository) UpdateUsername(id, username string) error {
+	res, err := r.db.Exec(
+		`UPDATE mino_users SET username = $1, updated_at = NOW() WHERE id = $2`,
+		username, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}

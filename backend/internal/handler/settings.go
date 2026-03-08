@@ -24,21 +24,53 @@ type LLMConfigResponse struct {
 	EmbeddingModel string `json:"embedding_model"`
 }
 
-// GetLLMConfig returns the current LLM configuration.
+// getProviderConfig returns the LLMConfig for a given provider name.
+// Falls back to the active LLM config if the provider is not found in per-provider store.
+func (h *SettingsHandler) getProviderConfig(provider string) config.LLMConfig {
+	if h.cfg.LLMProviders != nil {
+		if cfg, ok := h.cfg.LLMProviders[provider]; ok {
+			return cfg
+		}
+	}
+	// Fallback: if querying the currently active provider, return the active config
+	if provider == h.cfg.LLM.Provider {
+		return h.cfg.LLM
+	}
+	return config.LLMConfig{Provider: provider}
+}
+
+// setProviderConfig stores a per-provider config.
+func (h *SettingsHandler) setProviderConfig(provider string, cfg config.LLMConfig) {
+	if h.cfg.LLMProviders == nil {
+		h.cfg.LLMProviders = make(config.LLMProviderConfigs)
+	}
+	h.cfg.LLMProviders[provider] = cfg
+}
+
+// GetLLMConfig returns the LLM configuration.
+// Supports optional query param ?provider=xxx to get a specific provider's config.
+// If omitted, returns the currently active provider's config.
 // Sensitive fields (api_key) are returned empty — the client shows them as blank.
 // GET /v1/settings/llm
 func (h *SettingsHandler) GetLLMConfig(c *gin.Context) {
+	provider := c.Query("provider")
+	if provider == "" {
+		provider = h.cfg.LLM.Provider
+	}
+
+	cfg := h.getProviderConfig(provider)
 	resp := LLMConfigResponse{
-		Provider:       h.cfg.LLM.Provider,
+		Provider:       provider,
 		APIKey:         "", // never expose
-		BaseURL:        h.cfg.LLM.BaseURL,
-		Model:          h.cfg.LLM.Model,
-		EmbeddingModel: h.cfg.LLM.EmbeddingModel,
+		BaseURL:        cfg.BaseURL,
+		Model:          cfg.Model,
+		EmbeddingModel: cfg.EmbeddingModel,
 	}
 	response.OK(c, resp)
 }
 
 // UpdateLLMConfig updates the LLM configuration at runtime.
+// Saves the config for the specified provider and sets it as the active provider.
 // PUT /v1/settings/llm
 func (h *SettingsHandler) UpdateLLMConfig(c *gin.Context) {
 	var req LLMConfigResponse
@@ -47,29 +79,39 @@ func (h *SettingsHandler) UpdateLLMConfig(c *gin.Context) {
 		return
 	}
 
-	if req.Provider != "" {
-		h.cfg.LLM.Provider = req.Provider
-	}
-	// Only update API key if a non-empty value is provided (empty = keep current)
-	if req.APIKey != "" {
-		h.cfg.LLM.APIKey = req.APIKey
-	}
-	if req.BaseURL != "" {
-		h.cfg.LLM.BaseURL = req.BaseURL
-	}
-	if req.Model != "" {
-		h.cfg.LLM.Model = req.Model
-	}
-	if req.EmbeddingModel != "" {
-		h.cfg.LLM.EmbeddingModel = req.EmbeddingModel
+	provider := req.Provider
+	if provider == "" {
+		provider = h.cfg.LLM.Provider
 	}
 
+	// Load existing per-provider config as base
+	cfg := h.getProviderConfig(provider)
+	cfg.Provider = provider
+
+	if req.APIKey != "" {
+		cfg.APIKey = req.APIKey
+	}
+	// Allow clearing base_url by sending empty string — use a special check
+	cfg.BaseURL = req.BaseURL
+	if req.Model != "" {
+		cfg.Model = req.Model
+	}
+	if req.EmbeddingModel != "" {
+		cfg.EmbeddingModel = req.EmbeddingModel
+	}
+
+	// Save per-provider config
+	h.setProviderConfig(provider, cfg)
+
+	// Set as active provider
+	h.cfg.LLM = cfg
+
 	resp := LLMConfigResponse{
-		Provider:       h.cfg.LLM.Provider,
+		Provider:       cfg.Provider,
 		APIKey:         "", // never expose
-		BaseURL:        h.cfg.LLM.BaseURL,
-		Model:          h.cfg.LLM.Model,
-		EmbeddingModel: h.cfg.LLM.EmbeddingModel,
+		BaseURL:        cfg.BaseURL,
+		Model:          cfg.Model,
+		EmbeddingModel: cfg.EmbeddingModel,
 	}
 	response.OK(c, resp)
 }
