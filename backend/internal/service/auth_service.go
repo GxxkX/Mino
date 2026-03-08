@@ -78,6 +78,33 @@ func (s *AuthService) ChangePassword(userID, oldPassword, newPassword string) er
 	return s.userRepo.UpdatePassword(userID, string(hash))
 }
 
+func (s *AuthService) ChangeUsername(userID, newUsername, password string) error {
+	if len(newUsername) < 2 {
+		return errors.New("username must be at least 2 characters")
+	}
+
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil || user == nil {
+		return errors.New("user not found")
+	}
+
+	// Verify password before allowing username change
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return errors.New("invalid password")
+	}
+
+	// Check if new username is already taken
+	existing, err := s.userRepo.FindByUsername(newUsername)
+	if err != nil {
+		return fmt.Errorf("database error: %w", err)
+	}
+	if existing != nil && existing.ID != userID {
+		return errors.New("username already taken")
+	}
+
+	return s.userRepo.UpdateUsername(userID, newUsername)
+}
+
 // EnsureAdminUser creates the default admin user if it doesn't exist.
 func (s *AuthService) EnsureAdminUser() error {
 	user, err := s.userRepo.FindByUsername(s.cfg.Admin.Username)

@@ -8,8 +8,9 @@ export interface LLMConfig {
   embedding_model: string;
 }
 
-export async function getLLMConfig(): Promise<LLMConfig> {
-  const res = await request<ApiResponse<LLMConfig>>('/settings/llm');
+export async function getLLMConfig(provider?: string): Promise<LLMConfig> {
+  const query = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+  const res = await request<ApiResponse<LLMConfig>>(`/settings/llm${query}`);
   return res.data;
 }
 

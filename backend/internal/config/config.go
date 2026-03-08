@@ -4,17 +4,18 @@ import "time"
 
 // Config holds all application configuration
 type Config struct {
-	App       AppConfig
-	DB        DBConfig
-	Redis     RedisConfig
-	JWT       JWTConfig
-	Admin     AdminConfig
-	LLM       LLMConfig
-	Milvus    MilvusConfig
-	MinIO     MinIOConfig
-	Typesense TypesenseConfig
-	LangSmith LangSmithConfig
-	STT       STTConfig
+	App          AppConfig
+	DB           DBConfig
+	Redis        RedisConfig
+	JWT          JWTConfig
+	Admin        AdminConfig
+	LLM          LLMConfig
+	LLMProviders LLMProviderConfigs // per-provider configs
+	Milvus       MilvusConfig
+	MinIO        MinIOConfig
+	Typesense    TypesenseConfig
+	LangSmith    LangSmithConfig
+	STT          STTConfig
 }
 
 type AppConfig struct {
@@ -58,6 +59,10 @@ type LLMConfig struct {
 	Model          string
 	EmbeddingModel string
 }
+
+// LLMProviderConfigs stores per-provider LLM configurations.
+// Key is the provider name (e.g. "openai", "anthropic", "ollama").
+type LLMProviderConfigs map[string]LLMConfig
 
 type MilvusConfig struct {
 	Host                    string

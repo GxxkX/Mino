@@ -88,7 +88,7 @@ type LangchainLLMService struct {
 
 // NewLangchainLLMService creates a new LangchainGo-based LLM service.
 // It initialises the LLM client based on LLM_PROVIDER from .env:
-//   - "openai" / "zhipu" / "ollama" — all use the OpenAI-compatible client
+//   - "openai" / "anthropic" / "ollama" — all use the OpenAI-compatible client
 //     with LLM_API_KEY, LLM_BASE_URL, LLM_MODEL.
 //
 // LangSmith tracing is configured via a callback handler when enabled.
@@ -128,11 +128,11 @@ func NewLangchainLLMService(cfg *config.LLMConfig, langsmithCfg *config.LangSmit
 }
 
 // initLLM creates the LangchainGo LLM model based on the provider config.
-// All three supported providers (openai, zhipu, ollama) expose OpenAI-compatible APIs,
+// All three supported providers (openai, anthropic, ollama) expose OpenAI-compatible APIs,
 // so they all use the openai client with different base URLs.
 func initLLM(cfg *config.LLMConfig, lsHandler *LangSmithHandler) (llms.Model, error) {
 	switch cfg.Provider {
-	case "openai", "zhipu", "ollama":
+	case "openai", "anthropic", "ollama":
 		opts := []openai.Option{
 			openai.WithModel(cfg.Model),
 		}
@@ -151,7 +151,7 @@ func initLLM(cfg *config.LLMConfig, lsHandler *LangSmithHandler) (llms.Model, er
 		}
 		return llm, nil
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s (supported: openai, zhipu, ollama)", cfg.Provider)
+		return nil, fmt.Errorf("unsupported LLM provider: %s (supported: openai, anthropic, ollama)", cfg.Provider)
 	}
 }
 
@@ -159,7 +159,7 @@ func initLLM(cfg *config.LLMConfig, lsHandler *LangSmithHandler) (llms.Model, er
 // The embedding model defaults to the LLM model if no dedicated embedding model is configured.
 func initEmbedder(cfg *config.LLMConfig) (embeddings.Embedder, error) {
 	switch cfg.Provider {
-	case "openai", "zhipu", "ollama":
+	case "openai", "anthropic", "ollama":
 		opts := []openai.Option{
 			openai.WithModel(cfg.Model),
 			openai.WithEmbeddingModel(cfg.EmbeddingModel),
@@ -208,6 +208,228 @@ func (s *LangchainLLMService) ChatAgentStream(ctx context.Context, userMessage s
 	}
 
 	return s.callStream(ctx, systemPrompt, userMessage, chunkFn)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ChatAgentWithTools — chat with function/tool calling
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ChatAgentWithTools implements LLMProvider.ChatAgentWithTools.
+// It sends the user message with tool definitions. When the LLM returns tool calls,
+// it executes them via toolExecutor and feeds results back for the next turn.
+func (s *LangchainLLMService) ChatAgentWithTools(ctx context.Context, userMessage string, retrievedContext string, tools []ToolDefinition, toolExecutor func(name string, args map[string]interface{}) (*ToolResult, error)) (string, error) {
+	systemPrompt := chatAgentSystemPrompt
+	if retrievedContext != "" {
+		systemPrompt += "\n\n## 相关历史对话记录\n" + retrievedContext
+	}
+
+	llmTools := convertToLLMTools(tools)
+
+	messages := []llms.MessageContent{
+		{
+			Role:  llms.ChatMessageTypeSystem,
+			Parts: []llms.ContentPart{llms.TextContent{Text: systemPrompt}},
+		},
+		{
+			Role:  llms.ChatMessageTypeHuman,
+			Parts: []llms.ContentPart{llms.TextContent{Text: userMessage}},
+		},
+	}
+
+	// Multi-turn tool calling loop (max 10 rounds to prevent infinite loops)
+	for i := 0; i < 10; i++ {
+		response, err := s.llm.GenerateContent(ctx, messages, llms.WithTools(llmTools))
+		if err != nil {
+			return "", fmt.Errorf("LLM generation failed: %w", err)
+		}
+		if len(response.Choices) == 0 {
+			return "", fmt.Errorf("no choices in LLM response")
+		}
+
+		choice := response.Choices[0]
+
+		// If no tool calls, return the text content
+		if len(choice.ToolCalls) == 0 {
+			return choice.Content, nil
+		}
+
+		// Append assistant message with tool calls
+		var assistantParts []llms.ContentPart
+		if choice.Content != "" {
+			assistantParts = append(assistantParts, llms.TextContent{Text: choice.Content})
+		}
+		for _, tc := range choice.ToolCalls {
+			assistantParts = append(assistantParts, llms.ToolCall{
+				ID:            tc.ID,
+				Type:          "function",
+				FunctionCall:  &llms.FunctionCall{Name: tc.FunctionCall.Name, Arguments: tc.FunctionCall.Arguments},
+			})
+		}
+		messages = append(messages, llms.MessageContent{
+			Role:  llms.ChatMessageTypeAI,
+			Parts: assistantParts,
+		})
+
+		// Execute each tool call and append results
+		for _, tc := range choice.ToolCalls {
+			args := parseToolCallArgs(tc.FunctionCall.Arguments)
+			result, err := toolExecutor(tc.FunctionCall.Name, args)
+			if err != nil {
+				result = &ToolResult{Success: false, Error: err.Error()}
+			}
+
+			resultJSON, _ := json.Marshal(result)
+			messages = append(messages, llms.MessageContent{
+				Role: llms.ChatMessageTypeTool,
+				Parts: []llms.ContentPart{
+					llms.ToolCallResponse{
+						ToolCallID: tc.ID,
+						Name:       tc.FunctionCall.Name,
+						Content:    string(resultJSON),
+					},
+				},
+			})
+		}
+	}
+
+	return "", fmt.Errorf("tool calling loop exceeded maximum iterations")
+}
+
+// ChatAgentWithToolsStream implements LLMProvider.ChatAgentWithToolsStream.
+// Streaming variant: streams text chunks via chunkFn, handles tool calls between streams.
+func (s *LangchainLLMService) ChatAgentWithToolsStream(ctx context.Context, userMessage string, retrievedContext string, tools []ToolDefinition, toolExecutor func(name string, args map[string]interface{}) (*ToolResult, error), chunkFn func(chunk string)) (string, error) {
+	systemPrompt := chatAgentSystemPrompt
+	if retrievedContext != "" {
+		systemPrompt += "\n\n## 相关历史对话记录\n" + retrievedContext
+	}
+
+	llmTools := convertToLLMTools(tools)
+
+	messages := []llms.MessageContent{
+		{
+			Role:  llms.ChatMessageTypeSystem,
+			Parts: []llms.ContentPart{llms.TextContent{Text: systemPrompt}},
+		},
+		{
+			Role:  llms.ChatMessageTypeHuman,
+			Parts: []llms.ContentPart{llms.TextContent{Text: userMessage}},
+		},
+	}
+
+	var finalContent strings.Builder
+
+	for i := 0; i < 10; i++ {
+		var streamContent strings.Builder
+
+		response, err := s.llm.GenerateContent(ctx, messages,
+			llms.WithTools(llmTools),
+			llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
+				text := string(chunk)
+				streamContent.WriteString(text)
+				if chunkFn != nil {
+					chunkFn(text)
+				}
+				return nil
+			}),
+		)
+		if err != nil {
+			if streamContent.Len() > 0 {
+				return streamContent.String(), fmt.Errorf("LLM streaming failed: %w", err)
+			}
+			return "", fmt.Errorf("LLM streaming failed: %w", err)
+		}
+
+		if len(response.Choices) == 0 {
+			if streamContent.Len() > 0 {
+				return streamContent.String(), nil
+			}
+			return "", fmt.Errorf("no choices in LLM response")
+		}
+
+		choice := response.Choices[0]
+
+		// If no tool calls, we're done
+		if len(choice.ToolCalls) == 0 {
+			if streamContent.Len() > 0 {
+				finalContent.WriteString(streamContent.String())
+			} else if choice.Content != "" {
+				finalContent.WriteString(choice.Content)
+			}
+			return finalContent.String(), nil
+		}
+
+		// Tool calls detected — append assistant message and execute tools
+		var assistantParts []llms.ContentPart
+		content := streamContent.String()
+		if content == "" {
+			content = choice.Content
+		}
+		if content != "" {
+			assistantParts = append(assistantParts, llms.TextContent{Text: content})
+			finalContent.WriteString(content)
+		}
+		for _, tc := range choice.ToolCalls {
+			assistantParts = append(assistantParts, llms.ToolCall{
+				ID:            tc.ID,
+				Type:          "function",
+				FunctionCall:  &llms.FunctionCall{Name: tc.FunctionCall.Name, Arguments: tc.FunctionCall.Arguments},
+			})
+		}
+		messages = append(messages, llms.MessageContent{
+			Role:  llms.ChatMessageTypeAI,
+			Parts: assistantParts,
+		})
+
+		for _, tc := range choice.ToolCalls {
+			args := parseToolCallArgs(tc.FunctionCall.Arguments)
+			result, err := toolExecutor(tc.FunctionCall.Name, args)
+			if err != nil {
+				result = &ToolResult{Success: false, Error: err.Error()}
+			}
+
+			resultJSON, _ := json.Marshal(result)
+			messages = append(messages, llms.MessageContent{
+				Role: llms.ChatMessageTypeTool,
+				Parts: []llms.ContentPart{
+					llms.ToolCallResponse{
+						ToolCallID: tc.ID,
+						Name:       tc.FunctionCall.Name,
+						Content:    string(resultJSON),
+					},
+				},
+			})
+		}
+	}
+
+	if finalContent.Len() > 0 {
+		return finalContent.String(), nil
+	}
+	return "", fmt.Errorf("tool calling loop exceeded maximum iterations")
+}
+
+// convertToLLMTools converts ToolDefinition slice to langchaingo llms.Tool slice.
+func convertToLLMTools(tools []ToolDefinition) []llms.Tool {
+	var result []llms.Tool
+	for _, t := range tools {
+		result = append(result, llms.Tool{
+			Type: "function",
+			Function: &llms.FunctionDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
+	}
+	return result
+}
+
+// parseToolCallArgs parses the JSON arguments string from a tool call into a map.
+func parseToolCallArgs(argsStr string) map[string]interface{} {
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+		return map[string]interface{}{}
+	}
+	return args
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

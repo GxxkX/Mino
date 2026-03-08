@@ -28,3 +28,10 @@ export async function changePassword(oldPassword: string, newPassword: string): 
     body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
   });
 }
+
+export async function changeUsername(newUsername: string, password: string): Promise<void> {
+  await request('/auth/username', {
+    method: 'POST',
+    body: JSON.stringify({ new_username: newUsername, password }),
+  });
+}

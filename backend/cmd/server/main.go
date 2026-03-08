@@ -27,6 +27,7 @@ import (
 	"github.com/mino/backend/internal/pkg/vectordb"
 	"github.com/mino/backend/internal/repository"
 	"github.com/mino/backend/internal/service"
+	"github.com/mino/backend/internal/service/tools"
 )
 
 func main() {
@@ -147,8 +148,26 @@ func main() {
 		logger.Warn("STT provider not configured (transcription disabled)")
 	}
 
-	audioSvc := service.NewAudioService(convRepo, memRepo, taskRepo, llmProvider, vectorStoreSvc, storageClient, cfg, logger)
-	chatSvc := service.NewChatService(chatRepo, convRepo, llmProvider, vectorStoreSvc, logger)
+	// MemoryTaskService — shared business logic for memory/task operations
+	memTaskSvc := service.NewMemoryTaskService(memRepo, taskRepo, vectorStoreSvc, logger)
+
+	// ToolRegistry — register all agent tools with scope-based filtering
+	toolRegistry := service.NewToolRegistry()
+	// Chat-scoped tools (available to ChatAgent via function calling)
+	toolRegistry.Register(tools.NewMemoryCreateTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewMemorySearchTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewMemoryDeleteTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewTaskCreateTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewTaskListTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewTaskUpdateTool(memTaskSvc), "chat")
+	toolRegistry.Register(tools.NewTaskDeleteTool(memTaskSvc), "chat")
+	// Extract-scoped tools (available for batch operations from ExtractAgent)
+	toolRegistry.Register(tools.NewMemoryCreateBatchTool(memTaskSvc), "extract")
+	toolRegistry.Register(tools.NewTaskCreateBatchTool(memTaskSvc), "extract")
+	logger.Info("tool registry initialized with memory and task tools")
+
+	audioSvc := service.NewAudioService(convRepo, memTaskSvc, llmProvider, vectorStoreSvc, storageClient, cfg, logger)
+	chatSvc := service.NewChatService(chatRepo, convRepo, llmProvider, vectorStoreSvc, toolRegistry, logger)
 
 	// Typesense search
 	tsClient := search.NewClient(&cfg.Typesense)
@@ -158,6 +177,14 @@ func main() {
 		logger.Info("typesense collections ready")
 	}
 	searchSvc := service.NewSearchService(tsClient, convRepo, memRepo)
+
+	// Initialize per-provider LLM configs with the active config from .env
+	if cfg.LLMProviders == nil {
+		cfg.LLMProviders = make(config.LLMProviderConfigs)
+	}
+	if cfg.LLM.Provider != "" {
+		cfg.LLMProviders[cfg.LLM.Provider] = cfg.LLM
+	}
 
 	// Ensure default admin user exists
 	if err := authSvc.EnsureAdminUser(); err != nil {
@@ -206,6 +233,7 @@ func main() {
 
 	// Auth (protected)
 	protected.POST("/auth/password", authHandler.ChangePassword)
+	protected.POST("/auth/username", authHandler.ChangeUsername)
 
 	// Conversations
 	protected.GET("/conversations", convHandler.List)

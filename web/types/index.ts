@@ -95,7 +95,7 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   language: string;
   sttProvider: 'zhipu' | 'whisper';
-  llmProvider: 'openai' | 'zhipu' | 'ollama';
+  llmProvider: 'openai' | 'anthropic' | 'ollama';
   llmModel: string;
   cloudSync: boolean;
   mcpEnabled: boolean;
