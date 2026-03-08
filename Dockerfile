@@ -10,6 +10,10 @@ FROM golang:1.24-alpine AS backend-builder
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /src/backend
+
+ENV GO111MODULE=on
+ENV GOPROXY=https://goproxy.cn,direct
+
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
