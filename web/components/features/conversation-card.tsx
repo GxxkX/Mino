@@ -224,9 +224,15 @@ export function ConversationCard({ conversation }: ConversationCardProps) {
           </div>
         )}
 
-        {/* Hidden audio element */}
+        {/* Hidden audio element — audioUrl is a backend API path like
+            /v1/conversations/:id/audio, proxied via Next.js rewrites.
+            Token is passed as query param since <audio> can't send headers. */}
         {hasAudio && (
-          <audio ref={attachRef} src={conversation.audioUrl} preload="none" />
+          <audio
+            ref={attachRef}
+            src={`${conversation.audioUrl}?token=${typeof window !== 'undefined' ? localStorage.getItem('access_token') ?? '' : ''}`}
+            preload="none"
+          />
         )}
       </div>
 

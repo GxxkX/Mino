@@ -210,6 +210,7 @@ func main() {
 	// Conversations
 	protected.GET("/conversations", convHandler.List)
 	protected.GET("/conversations/:id", convHandler.Get)
+	protected.GET("/conversations/:id/audio", convHandler.StreamAudio)
 	protected.DELETE("/conversations/:id", convHandler.Delete)
 
 	// Memories

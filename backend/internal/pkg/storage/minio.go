@@ -15,8 +15,7 @@ const audioBucket = "mino-audio"
 
 // Client wraps the MinIO SDK for object storage operations.
 type Client struct {
-	mc        *minio.Client
-	publicURL string
+	mc *minio.Client
 }
 
 // NewClient initialises a MinIO client and ensures the audio bucket exists.
@@ -42,10 +41,12 @@ func NewClient(cfg *config.MinIOConfig) (*Client, error) {
 		}
 	}
 
-	return &Client{mc: mc, publicURL: cfg.PublicURL}, nil
+	return &Client{mc: mc}, nil
 }
 
-// UploadAudio stores an audio blob (e.g. opus/webm) and returns its accessible URL.
+// UploadAudio stores an audio blob (e.g. opus/webm) and returns the object key.
+// The actual URL is never stored — clients access audio via the backend proxy
+// endpoint GET /v1/conversations/:id/audio.
 func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Reader, size int64, contentType string) (string, error) {
 	_, err := c.mc.PutObject(ctx, audioBucket, objectKey, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -54,10 +55,23 @@ func (c *Client) UploadAudio(ctx context.Context, objectKey string, reader io.Re
 		return "", fmt.Errorf("minio put object: %w", err)
 	}
 
-	if c.publicURL != "" {
-		return fmt.Sprintf("%s/%s/%s", c.publicURL, audioBucket, objectKey), nil
+	// Store only the object key in the DB — the backend proxy resolves it.
+	return objectKey, nil
+}
+
+// GetAudio retrieves an audio object from MinIO. The caller must close the
+// returned ReadCloser. Also returns content-type and content-length.
+func (c *Client) GetAudio(ctx context.Context, objectKey string) (io.ReadCloser, string, int64, error) {
+	obj, err := c.mc.GetObject(ctx, audioBucket, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("minio get object: %w", err)
 	}
-	return fmt.Sprintf("/%s/%s", audioBucket, objectKey), nil
+	info, err := obj.Stat()
+	if err != nil {
+		obj.Close()
+		return nil, "", 0, fmt.Errorf("minio stat object: %w", err)
+	}
+	return obj, info.ContentType, info.Size, nil
 }
 
 // DeleteAudio removes an audio object from the bucket.

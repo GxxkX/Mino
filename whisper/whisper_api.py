@@ -26,6 +26,29 @@ logger.info(f"Using device: {device}")
 # 缓存已加载的模型
 loaded_models = {}
 
+
+def _ensure_model_downloaded(model_name: str):
+    """确保模型文件已下载到本地缓存，启动时调用以避免首次转写延迟。"""
+    import whisper as _whisper
+    download_root = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
+    os.makedirs(download_root, exist_ok=True)
+
+    # whisper 内部维护了一个 name→url 映射，利用它来检查文件是否存在
+    url = _whisper._MODELS.get(model_name)
+    if url is None:
+        logger.warning(f"Unknown model name '{model_name}', skipping pre-download")
+        return
+
+    expected_path = os.path.join(download_root, os.path.basename(url))
+    if os.path.isfile(expected_path):
+        logger.info(f"Model '{model_name}' already cached at {expected_path}")
+    else:
+        logger.info(f"Model '{model_name}' not found locally, downloading...")
+        # whisper._download 会下载并校验 SHA256
+        _whisper._download(url, download_root, in_memory=False)
+        logger.info(f"Model '{model_name}' downloaded to {expected_path}")
+
+
 def get_model(model_name: str):
     """获取或加载指定的模型"""
     if model_name not in loaded_models:
@@ -38,14 +61,19 @@ def get_model(model_name: str):
             raise HTTPException(status_code=500, detail=f"Failed to load model {model_name}: {str(e)}")
     return loaded_models[model_name]
 
-# 预加载默认模型
+
+# ── 启动时预下载并加载默认模型 ──────────────────────────────────
+# 先确保模型文件存在（下载），再加载到内存，避免首次转写请求时的长时间等待。
+logger.info(f"Pre-downloading default model '{DEFAULT_MODEL}' if needed...")
 try:
+    _ensure_model_downloaded(DEFAULT_MODEL)
     get_model(DEFAULT_MODEL)
 except Exception as e:
     logger.warning(f"Failed to preload default model {DEFAULT_MODEL}: {e}")
     # 尝试加载 base 作为后备
     try:
         DEFAULT_MODEL = "base"
+        _ensure_model_downloaded(DEFAULT_MODEL)
         get_model(DEFAULT_MODEL)
     except Exception as e2:
         logger.error(f"Failed to load fallback base model: {e2}")

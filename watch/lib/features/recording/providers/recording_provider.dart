@@ -43,13 +43,22 @@ class RecordingProvider extends ChangeNotifier {
         final text = message['text'] as String? ?? '';
         final isFinal = message['is_final'] as bool? ?? false;
         if (isFinal) {
-          if (_finalTranscript.isNotEmpty && text.isNotEmpty) {
+          // Fold any accumulated partial text + this final delta into _finalTranscript
+          final pending = _partialTranscript.isNotEmpty
+              ? '$_partialTranscript $text'
+              : text;
+          if (_finalTranscript.isNotEmpty && pending.isNotEmpty) {
             _finalTranscript += ' ';
           }
-          _finalTranscript += text;
+          _finalTranscript += pending;
           _partialTranscript = '';
         } else {
-          _partialTranscript = text;
+          // Backend sends incremental deltas — accumulate them
+          if (_partialTranscript.isNotEmpty && text.isNotEmpty) {
+            _partialTranscript += text;
+          } else {
+            _partialTranscript = text;
+          }
         }
         notifyListeners();
         break;
@@ -61,7 +70,12 @@ class RecordingProvider extends ChangeNotifier {
             _state != RecordingState.connecting) {
           final completedTranscript = message['transcript'] as String?;
           if (completedTranscript != null && completedTranscript.isNotEmpty) {
-            _finalTranscript = completedTranscript;
+            // Append to existing transcript instead of overwriting
+            if (_finalTranscript.isNotEmpty) {
+              _finalTranscript += ' $completedTranscript';
+            } else {
+              _finalTranscript = completedTranscript;
+            }
             _partialTranscript = '';
           }
           _state = RecordingState.completed;
