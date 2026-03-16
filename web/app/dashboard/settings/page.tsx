@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { useTranslation } from '@/lib/i18n';
 import { signOut } from '@/lib/api/auth';
-import { Cloud, Key, Shield, Globe, ChevronRight, Mic, LogOut, Brain, Plug } from 'lucide-react';
+import { updateSTTConfig } from '@/lib/api/settings';
+import { Cloud, Key, Shield, Globe, ChevronRight, Mic, LogOut, Brain, Plug, Languages } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SettingsPage() {
@@ -133,6 +134,35 @@ export default function SettingsPage() {
             <p className="text-[11px] text-text-muted mt-2 pl-7">
               {t.settings.gainWarning}
             </p>
+          </div>
+          <div className="flex items-center gap-3 py-3 border-t border-border-subtle">
+            <Languages className="w-4 h-4 text-text-muted flex-shrink-0" />
+            <span className="text-sm text-text">{t.settings.whisperLanguage}</span>
+            <select
+              value={settings.whisperLanguage ?? ''}
+              onChange={(e) => {
+                const lang = e.target.value;
+                setSettings({ whisperLanguage: lang });
+                updateSTTConfig({ whisper_language: lang }).catch(console.error);
+              }}
+              className="ml-auto text-xs bg-transparent text-text-muted border border-border rounded-lg px-3 py-1.5
+                cursor-pointer outline-none transition-colors duration-200
+                focus:border-text-secondary focus:shadow-[0_0_0_3px_rgba(15,23,42,0.12)]
+                appearance-none"
+              aria-label={t.settings.whisperLanguage}
+            >
+              <option value="">{t.settings.whisperLanguageAuto}</option>
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="ru">Русский</option>
+              <option value="pt">Português</option>
+              <option value="ar">العربية</option>
+            </select>
           </div>
         </div>
 

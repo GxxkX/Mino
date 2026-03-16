@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/mino/backend/internal/model"
 	jwtpkg "github.com/mino/backend/internal/pkg/jwt"
 	"github.com/mino/backend/internal/service"
 )
@@ -22,16 +24,18 @@ var upgrader = websocket.Upgrader{
 }
 
 type WSHandler struct {
-	jwtMgr       *jwtpkg.Manager
-	audioService *service.AudioService
-	sttService   *service.STTService
+	jwtMgr         *jwtpkg.Manager
+	audioService   *service.AudioService
+	sttService     *service.STTService
+	speakerService *service.SpeakerService
 }
 
-func NewWSHandler(jwtMgr *jwtpkg.Manager, audioService *service.AudioService, sttService *service.STTService) *WSHandler {
+func NewWSHandler(jwtMgr *jwtpkg.Manager, audioService *service.AudioService, sttService *service.STTService, speakerService *service.SpeakerService) *WSHandler {
 	return &WSHandler{
-		jwtMgr:       jwtMgr,
-		audioService: audioService,
-		sttService:   sttService,
+		jwtMgr:         jwtMgr,
+		audioService:   audioService,
+		sttService:     sttService,
+		speakerService: speakerService,
 	}
 }
 
@@ -44,16 +48,19 @@ type wsClientMessage struct {
 
 // Outgoing message types to client
 type wsServerMessage struct {
-	Type           string      `json:"type"`
-	Text           string      `json:"text,omitempty"`
-	IsFinal        bool        `json:"is_final,omitempty"`
-	Timestamp      int64       `json:"timestamp,omitempty"`
-	ConversationID string      `json:"conversation_id,omitempty"`
-	Title          string      `json:"title,omitempty"`
-	Summary        string      `json:"summary,omitempty"`
-	ActionItems    []string    `json:"action_items,omitempty"`
-	Memories       interface{} `json:"memories,omitempty"`
-	Error          string      `json:"error,omitempty"`
+	Type              string                       `json:"type"`
+	Text              string                       `json:"text,omitempty"`
+	IsFinal           bool                         `json:"is_final,omitempty"`
+	Timestamp         int64                        `json:"timestamp,omitempty"`
+	ConversationID    string                       `json:"conversation_id,omitempty"`
+	Title             string                       `json:"title,omitempty"`
+	Summary           string                       `json:"summary,omitempty"`
+	ActionItems       []string                     `json:"action_items,omitempty"`
+	Memories          interface{}                  `json:"memories,omitempty"`
+	Error             string                       `json:"error,omitempty"`
+	// Speaker diarization fields
+	DiarizedSegments  []model.DiarizedSegment      `json:"diarized_segments,omitempty"`
+	Speakers          map[string]*service.SpeakerMatch `json:"speakers,omitempty"`
 }
 
 // AudioWS handles the WebSocket endpoint for real-time audio streaming.
@@ -224,12 +231,56 @@ func (h *WSHandler) AudioWS(c *gin.Context) {
 			copy(audioCopy, audioBuffer)
 			audioBuffer = nil
 
-			// Run LLM extraction + storage asynchronously
+			// Run diarization (if enabled) + LLM extraction + storage asynchronously
 			go func(uid, tx string, dur int, audio []byte) {
-				bgCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+				bgCtx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 				defer cancel()
 
-				conv, err := h.audioService.ProcessTranscript(bgCtx, uid, tx, dur, audio)
+				transcriptForLLM := tx
+
+				// If diarization is enabled, run speaker diarization on the full audio
+				if h.sttService != nil && h.sttService.IsDiarizationEnabled() && len(audio) > 0 {
+					sendMsg(wsServerMessage{Type: "status", Text: "diarizing"})
+
+					diarized, err := h.sttService.DiarizeFile(bgCtx, audio, "wav")
+					if err != nil {
+						log.Printf("diarization failed (userID=%s), falling back to plain transcript: %v", uid, err)
+					} else if len(diarized.Segments) > 0 {
+						// Resolve speaker identities via Milvus embeddings
+						var resolvedSegments []model.DiarizedSegment
+						var speakerMap map[string]*service.SpeakerMatch
+
+						if h.speakerService != nil {
+							resolvedSegments, speakerMap = h.speakerService.ResolveSpeakers(
+								bgCtx, uid, diarized.Segments, diarized.SpeakerEmbeddings,
+							)
+						} else {
+							resolvedSegments = diarized.Segments
+							speakerMap = make(map[string]*service.SpeakerMatch)
+						}
+
+						// Send diarized result to client
+						sendMsg(wsServerMessage{
+							Type:             "diarized",
+							DiarizedSegments: resolvedSegments,
+							Speakers:         speakerMap,
+							Timestamp:        time.Now().UnixMilli(),
+						})
+
+						// Build speaker-annotated transcript for LLM
+						var sb strings.Builder
+						for _, seg := range resolvedSegments {
+							name := seg.SpeakerName
+							if name == "" {
+								name = seg.Speaker
+							}
+							sb.WriteString(fmt.Sprintf("[%s]: %s\n", name, seg.Text))
+						}
+						transcriptForLLM = sb.String()
+					}
+				}
+
+				conv, err := h.audioService.ProcessTranscript(bgCtx, uid, transcriptForLLM, dur, audio)
 				if err != nil {
 					sendMsg(wsServerMessage{Type: "error", Error: "processing failed"})
 					return

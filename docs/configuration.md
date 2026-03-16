@@ -166,6 +166,43 @@ conversations and memories for keyword search.
 | `TYPESENSE_HOST_PORT` | `8108` | Typesense port |
 | `TYPESENSE_API_KEY` | | Typesense API key |
 
+## Speaker diarization (Pyannote)
+
+Mino supports speaker diarization powered by
+[pyannote.audio](https://github.com/pyannote/pyannote-audio). When
+enabled, the system identifies individual speakers in recordings and
+matches them against stored voiceprint embeddings in Milvus.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PYANNOTE_ENABLED` | `false` | Enable speaker diarization |
+| `PYANNOTE_HF_TOKEN` | | Hugging Face access token |
+| `SPEAKER_SIMILARITY_THRESHOLD` | `0.65` | Cosine similarity threshold for voiceprint matching |
+
+> **Warning:** Pyannote models are **gated models** on Hugging Face.
+> Before you can use them, you must complete the following steps:
+>
+> 1. Create a [Hugging Face](https://huggingface.co) account.
+> 2. Visit each model page and accept the license agreement:
+>    - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+>    - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+>    - [pyannote/embedding](https://huggingface.co/pyannote/embedding)
+> 3. Generate an access token at
+>    [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+>    with at least `read` scope.
+> 4. Set the token as `PYANNOTE_HF_TOKEN` in your `.env` file.
+>
+> Without completing these steps, the whisper service fails to
+> download the models and speaker diarization won't work.
+
+After enabling, rebuild the whisper container to preload the models
+at startup.
+
+```bash
+docker compose build --no-cache whisper
+docker compose up -d whisper
+```
+
 ## LangSmith
 
 Settings for LLM observability and tracing. LangSmith is optional and
@@ -234,6 +271,13 @@ MINIO_SECURE=false
 # Milvus
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+
+# STT
+STT_PROVIDER=whisper
+
+# Speaker Diarization (optional)
+PYANNOTE_ENABLED=false
+PYANNOTE_HF_TOKEN=hf_your_token_here
 ```
 
 ## Next steps

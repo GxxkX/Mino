@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Conversation, Memory, Task, ChatMessage, ChatSession, AppSettings, Extension } from '@/types';
+import type { User, Conversation, Memory, Task, ChatMessage, ChatSession, AppSettings, Extension, SpeakerProfile, DiarizedSegment, SpeakerMatch } from '@/types';
 
 interface AppState {
   user: User | null;
@@ -18,6 +18,18 @@ interface AppState {
   recordingError: string | null;
   /** ID of the conversation currently being played (null = nothing playing) */
   playingConversationId: string | null;
+  // Speaker diarization state
+  speakers: SpeakerProfile[];
+  diarizedSegments: DiarizedSegment[];
+  speakerMatches: Record<string, SpeakerMatch>;
+  isDiarizing: boolean;
+  setSpeakers: (speakers: SpeakerProfile[]) => void;
+  addSpeaker: (speaker: SpeakerProfile) => void;
+  removeSpeaker: (id: string) => void;
+  updateSpeakerLabel: (id: string, label: string) => void;
+  setDiarizedSegments: (segments: DiarizedSegment[]) => void;
+  setSpeakerMatches: (matches: Record<string, SpeakerMatch>) => void;
+  setIsDiarizing: (v: boolean) => void;
   setUser: (user: User | null) => void;
   setConversations: (conversations: Conversation[]) => void;
   removeConversation: (id: string) => void;
@@ -62,6 +74,7 @@ export const useAppStore = create<AppState>((set) => ({
     cloudSync: true,
     mcpEnabled: false,
     recordingGain: 1.0,
+    whisperLanguage: '',
   },
   isRecording: false,
   isPaused: false,
@@ -69,6 +82,19 @@ export const useAppStore = create<AppState>((set) => ({
   currentTranscript: '',
   recordingError: null,
   playingConversationId: null,
+  speakers: [],
+  diarizedSegments: [],
+  speakerMatches: {},
+  isDiarizing: false,
+  setSpeakers: (speakers) => set({ speakers }),
+  addSpeaker: (speaker) => set((state) => ({ speakers: [...state.speakers, speaker] })),
+  removeSpeaker: (id) => set((state) => ({ speakers: state.speakers.filter(s => s.id !== id) })),
+  updateSpeakerLabel: (id, label) => set((state) => ({
+    speakers: state.speakers.map(s => s.id === id ? { ...s, label, updatedAt: new Date().toISOString() } : s),
+  })),
+  setDiarizedSegments: (diarizedSegments) => set({ diarizedSegments }),
+  setSpeakerMatches: (speakerMatches) => set({ speakerMatches }),
+  setIsDiarizing: (isDiarizing) => set({ isDiarizing }),
   setUser: (user) => set({ user }),
   setConversations: (conversations) => set({ conversations }),
   removeConversation: (id) => set((state) => ({

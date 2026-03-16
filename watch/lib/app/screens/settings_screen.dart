@@ -166,6 +166,52 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: AppTheme.spaceSm),
+                // Whisper language selector within recording section
+                _buildSection(
+                  t('RECOGNITION LANGUAGE', '识别语言'),
+                  [
+                    _buildTile(
+                      icon: Icons.translate,
+                      title: t('Whisper Language', '识别语言'),
+                      trailing: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: settings.whisperLanguage,
+                          dropdownColor: AppTheme.primary,
+                          style: AppTheme.bodyStyle(fontSize: 13),
+                          items: [
+                            DropdownMenuItem(
+                                value: '',
+                                child: Text(t('Auto Detect', '自动检测'))),
+                            const DropdownMenuItem(
+                                value: 'zh', child: Text('中文')),
+                            const DropdownMenuItem(
+                                value: 'en', child: Text('English')),
+                            const DropdownMenuItem(
+                                value: 'ja', child: Text('日本語')),
+                            const DropdownMenuItem(
+                                value: 'ko', child: Text('한국어')),
+                            const DropdownMenuItem(
+                                value: 'es', child: Text('Español')),
+                            const DropdownMenuItem(
+                                value: 'fr', child: Text('Français')),
+                            const DropdownMenuItem(
+                                value: 'de', child: Text('Deutsch')),
+                            const DropdownMenuItem(
+                                value: 'ru', child: Text('Русский')),
+                            const DropdownMenuItem(
+                                value: 'pt', child: Text('Português')),
+                            const DropdownMenuItem(
+                                value: 'ar', child: Text('العربية')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) settings.setWhisperLanguage(v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: AppTheme.spaceLg),
                 // General section
                 _buildSection(

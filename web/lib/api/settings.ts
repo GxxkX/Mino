@@ -66,3 +66,21 @@ export async function updateCloudConfig(config: Partial<CloudConfig>): Promise<C
   });
   return res.data;
 }
+
+export interface STTConfig {
+  provider: string;
+  whisper_language: string;
+}
+
+export async function getSTTConfig(): Promise<STTConfig> {
+  const res = await request<ApiResponse<STTConfig>>('/settings/stt');
+  return res.data;
+}
+
+export async function updateSTTConfig(config: Partial<STTConfig>): Promise<STTConfig> {
+  const res = await request<ApiResponse<STTConfig>>('/settings/stt', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+  return res.data;
+}

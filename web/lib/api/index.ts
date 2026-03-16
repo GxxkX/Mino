@@ -7,3 +7,4 @@ export * as chatApi from './chat';
 export * as extensionsApi from './extensions';
 export * as searchApi from './search';
 export * as settingsApi from './settings';
+export * as speakersApi from './speakers';

@@ -17,6 +17,9 @@ const (
 	// Override via EmbeddingDim if needed.
 	DefaultEmbeddingDim = 1024
 
+	// Default speaker embedding dimension (pyannote/embedding outputs 512-dim).
+	DefaultSpeakerEmbeddingDim = 512
+
 	// Field names used in Milvus collections.
 	FieldID        = "id"
 	FieldUserID    = "user_id"
@@ -24,6 +27,10 @@ const (
 	FieldText      = "text"
 	FieldVector    = "vector"
 	FieldCreatedAt = "created_at"
+
+	// Speaker embedding collection fields.
+	FieldSpeakerID   = "speaker_id"
+	FieldSpeakerName = "speaker_name"
 )
 
 // SearchResult holds a single vector search hit.
@@ -294,4 +301,194 @@ func (c *Client) ConversationsCollection() string {
 // MemoriesCollection returns the configured collection name for memories.
 func (c *Client) MemoriesCollection() string {
 	return c.cfg.MemoriesCollection
+}
+
+// SpeakerEmbeddingsCollection returns the configured collection name for speaker embeddings.
+func (c *Client) SpeakerEmbeddingsCollection() string {
+	return c.cfg.SpeakerEmbeddingsCollection
+}
+
+// EnsureSpeakerCollection creates the speaker embeddings collection if it doesn't exist.
+func (c *Client) EnsureSpeakerCollection(ctx context.Context) error {
+	name := c.cfg.SpeakerEmbeddingsCollection
+	if name == "" {
+		return nil
+	}
+
+	exists, err := c.milvus.HasCollection(ctx, name)
+	if err != nil {
+		return fmt.Errorf("check collection %s: %w", name, err)
+	}
+	if !exists {
+		if err := c.createSpeakerCollection(ctx, name); err != nil {
+			return err
+		}
+		c.logger.Infof("created Milvus speaker collection: %s", name)
+	}
+
+	if err := c.milvus.LoadCollection(ctx, name, false); err != nil {
+		c.logger.Warnf("load collection %s: %v", name, err)
+	}
+	return nil
+}
+
+// createSpeakerCollection builds the speaker embedding collection schema.
+func (c *Client) createSpeakerCollection(ctx context.Context, name string) error {
+	schema := &entity.Schema{
+		CollectionName: name,
+		AutoID:         true,
+		Fields: []*entity.Field{
+			{
+				Name:       FieldID,
+				DataType:   entity.FieldTypeInt64,
+				PrimaryKey: true,
+				AutoID:     true,
+			},
+			{
+				Name:     FieldUserID,
+				DataType: entity.FieldTypeVarChar,
+				TypeParams: map[string]string{
+					entity.TypeParamMaxLength: "64",
+				},
+			},
+			{
+				Name:     FieldSpeakerID,
+				DataType: entity.FieldTypeVarChar,
+				TypeParams: map[string]string{
+					entity.TypeParamMaxLength: "64",
+				},
+			},
+			{
+				Name:     FieldSpeakerName,
+				DataType: entity.FieldTypeVarChar,
+				TypeParams: map[string]string{
+					entity.TypeParamMaxLength: "128",
+				},
+			},
+			{
+				Name:     FieldVector,
+				DataType: entity.FieldTypeFloatVector,
+				TypeParams: map[string]string{
+					entity.TypeParamDim: fmt.Sprintf("%d", DefaultSpeakerEmbeddingDim),
+				},
+			},
+		},
+	}
+
+	if err := c.milvus.CreateCollection(ctx, schema, entity.DefaultShardNumber); err != nil {
+		return fmt.Errorf("create collection %s: %w", name, err)
+	}
+
+	idx, err := entity.NewIndexIvfFlat(entity.COSINE, 128)
+	if err != nil {
+		return fmt.Errorf("create index params: %w", err)
+	}
+	if err := c.milvus.CreateIndex(ctx, name, FieldVector, idx, false); err != nil {
+		return fmt.Errorf("create index on %s: %w", name, err)
+	}
+
+	return nil
+}
+
+// SpeakerSearchResult holds a speaker embedding search hit.
+type SpeakerSearchResult struct {
+	SpeakerID   string
+	SpeakerName string
+	UserID      string
+	Score       float32
+}
+
+// InsertSpeaker adds a speaker embedding to the speaker collection.
+func (c *Client) InsertSpeaker(ctx context.Context, userID, speakerID, speakerName string, vector []float32) error {
+	collection := c.cfg.SpeakerEmbeddingsCollection
+
+	_, err := c.milvus.Insert(ctx, collection, "",
+		entity.NewColumnVarChar(FieldUserID, []string{userID}),
+		entity.NewColumnVarChar(FieldSpeakerID, []string{speakerID}),
+		entity.NewColumnVarChar(FieldSpeakerName, []string{speakerName}),
+		entity.NewColumnFloatVector(FieldVector, DefaultSpeakerEmbeddingDim, [][]float32{vector}),
+	)
+	if err != nil {
+		return fmt.Errorf("insert speaker into %s: %w", collection, err)
+	}
+
+	if err := c.milvus.Flush(ctx, collection, false); err != nil {
+		c.logger.Warnf("flush %s: %v", collection, err)
+	}
+	return nil
+}
+
+// SearchSpeaker performs ANN search on the speaker collection to find the closest known speaker.
+func (c *Client) SearchSpeaker(ctx context.Context, userID string, queryVector []float32, topK int) ([]SpeakerSearchResult, error) {
+	collection := c.cfg.SpeakerEmbeddingsCollection
+
+	sp, err := entity.NewIndexIvfFlatSearchParam(16)
+	if err != nil {
+		return nil, fmt.Errorf("create search params: %w", err)
+	}
+
+	filter := fmt.Sprintf(`user_id == "%s"`, userID)
+
+	results, err := c.milvus.Search(
+		ctx,
+		collection,
+		nil,
+		filter,
+		[]string{FieldUserID, FieldSpeakerID, FieldSpeakerName},
+		[]entity.Vector{entity.FloatVector(queryVector)},
+		FieldVector,
+		entity.COSINE,
+		topK,
+		sp,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search %s: %w", collection, err)
+	}
+
+	var hits []SpeakerSearchResult
+	for _, result := range results {
+		var userIDCol, speakerIDCol, speakerNameCol *entity.ColumnVarChar
+
+		for _, field := range result.Fields {
+			switch field.Name() {
+			case FieldUserID:
+				userIDCol = field.(*entity.ColumnVarChar)
+			case FieldSpeakerID:
+				speakerIDCol = field.(*entity.ColumnVarChar)
+			case FieldSpeakerName:
+				speakerNameCol = field.(*entity.ColumnVarChar)
+			}
+		}
+
+		for i := 0; i < result.ResultCount; i++ {
+			hit := SpeakerSearchResult{
+				Score: result.Scores[i],
+			}
+			if userIDCol != nil {
+				v, _ := userIDCol.ValueByIdx(i)
+				hit.UserID = v
+			}
+			if speakerIDCol != nil {
+				v, _ := speakerIDCol.ValueByIdx(i)
+				hit.SpeakerID = v
+			}
+			if speakerNameCol != nil {
+				v, _ := speakerNameCol.ValueByIdx(i)
+				hit.SpeakerName = v
+			}
+			hits = append(hits, hit)
+		}
+	}
+
+	return hits, nil
+}
+
+// DeleteSpeaker removes all vectors matching a speaker_id in the speaker collection.
+func (c *Client) DeleteSpeaker(ctx context.Context, speakerID string) error {
+	collection := c.cfg.SpeakerEmbeddingsCollection
+	expr := fmt.Sprintf(`speaker_id == "%s"`, speakerID)
+	if err := c.milvus.Delete(ctx, collection, "", expr); err != nil {
+		return fmt.Errorf("delete speaker from %s where %s: %w", collection, expr, err)
+	}
+	return nil
 }

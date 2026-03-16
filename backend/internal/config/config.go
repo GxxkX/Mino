@@ -65,13 +65,14 @@ type LLMConfig struct {
 type LLMProviderConfigs map[string]LLMConfig
 
 type MilvusConfig struct {
-	Host                    string
-	Port                    string
-	User                    string
-	Password                string
-	DBName                  string
-	ConversationsCollection string
-	MemoriesCollection      string
+	Host                       string
+	Port                       string
+	User                       string
+	Password                   string
+	DBName                     string
+	ConversationsCollection    string
+	MemoriesCollection         string
+	SpeakerEmbeddingsCollection string
 }
 
 type MinIOConfig struct {
@@ -102,7 +103,12 @@ type STTConfig struct {
 	Provider string // "whisper"
 
 	// Whisper configuration
-	WhisperAPIURL string
-	WhisperAPIKey string
-	WhisperModel  string
+	WhisperAPIURL  string
+	WhisperAPIKey  string
+	WhisperModel   string
+	WhisperLanguage string // e.g. "zh", "en", "ja", "" for auto-detect
+
+	// Pyannote speaker diarization
+	PyannoteEnabled            bool
+	SpeakerSimilarityThreshold float64 // cosine similarity threshold for speaker matching (0-1)
 }

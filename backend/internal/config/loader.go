@@ -65,13 +65,14 @@ func Load(envFile string) (*Config, error) {
 			EmbeddingModel: getEnv("LLM_EMBEDDING_MODEL", "embedding-3"),
 		},
 		Milvus: MilvusConfig{
-			Host:                    getEnv("MILVUS_HOST", "localhost"),
-			Port:                    getEnv("MILVUS_PORT", "19530"),
-			User:                    getEnv("MILVUS_USER", ""),
-			Password:                getEnv("MILVUS_PASSWORD", ""),
-			DBName:                  getEnv("MILVUS_DB_NAME", "default"),
-			ConversationsCollection: getEnv("MILVUS_CONVERSATIONS_COLLECTION", "conversations"),
-			MemoriesCollection:      getEnv("MILVUS_MEMORIES_COLLECTION", "memories"),
+			Host:                       getEnv("MILVUS_HOST", "localhost"),
+			Port:                       getEnv("MILVUS_PORT", "19530"),
+			User:                       getEnv("MILVUS_USER", ""),
+			Password:                   getEnv("MILVUS_PASSWORD", ""),
+			DBName:                     getEnv("MILVUS_DB_NAME", "default"),
+			ConversationsCollection:    getEnv("MILVUS_CONVERSATIONS_COLLECTION", "conversations"),
+			MemoriesCollection:         getEnv("MILVUS_MEMORIES_COLLECTION", "memories"),
+			SpeakerEmbeddingsCollection: getEnv("MILVUS_SPEAKER_EMBEDDINGS_COLLECTION", "speaker_embeddings"),
 		},
 		MinIO: MinIOConfig{
 			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
@@ -95,10 +96,13 @@ func Load(envFile string) (*Config, error) {
 			PromptCacheTTLSeconds: getEnvInt("OMI_LANGSMITH_PROMPT_CACHE_TTL_SECONDS", 300),
 		},
 		STT: STTConfig{
-			Provider:      getEnv("STT_PROVIDER", "whisper"),
-			WhisperAPIURL: getEnv("STT_WHISPER_API_URL", "http://localhost:9000"),
-			WhisperAPIKey: getEnv("STT_WHISPER_API_KEY", ""),
-			WhisperModel:  getEnv("STT_WHISPER_MODEL", "turbo"),
+			Provider:                   getEnv("STT_PROVIDER", "whisper"),
+			WhisperAPIURL:              getEnv("STT_WHISPER_API_URL", "http://localhost:9000"),
+			WhisperAPIKey:              getEnv("STT_WHISPER_API_KEY", ""),
+			WhisperModel:               getEnv("STT_WHISPER_MODEL", "turbo"),
+			WhisperLanguage:            getEnv("STT_WHISPER_LANGUAGE", ""),
+			PyannoteEnabled:            getEnvBool("STT_PYANNOTE_ENABLED", false),
+			SpeakerSimilarityThreshold: getEnvFloat("SPEAKER_SIMILARITY_THRESHOLD", 0.75),
 		},
 	}
 
@@ -142,4 +146,16 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return i
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fallback
+	}
+	return f
 }

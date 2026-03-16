@@ -6,7 +6,9 @@
  *   - Server responses are always JSON text frames.
  */
 
-type ServerMessageType = 'status' | 'transcript' | 'completed' | 'error';
+import type { DiarizedSegment, SpeakerMatch } from '@/types';
+
+type ServerMessageType = 'status' | 'transcript' | 'completed' | 'error' | 'diarized';
 
 export interface WSServerMessage {
   type: ServerMessageType;
@@ -19,6 +21,9 @@ export interface WSServerMessage {
   action_items?: string[];
   memories?: unknown;
   error?: string;
+  // Speaker diarization fields
+  diarized_segments?: DiarizedSegment[];
+  speakers?: Record<string, SpeakerMatch>;
 }
 
 interface WSControlMessage {

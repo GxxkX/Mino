@@ -280,3 +280,38 @@ func (h *SettingsHandler) UpdateCloudConfig(c *gin.Context) {
 	// Return updated config
 	h.GetCloudConfig(c)
 }
+
+// STTConfigResponse is the JSON shape returned / accepted for STT settings.
+type STTConfigResponse struct {
+	Provider        string `json:"provider"`
+	WhisperLanguage string `json:"whisper_language"`
+}
+
+// GetSTTConfig returns the STT configuration.
+// GET /v1/settings/stt
+func (h *SettingsHandler) GetSTTConfig(c *gin.Context) {
+	resp := STTConfigResponse{
+		Provider:        h.cfg.STT.Provider,
+		WhisperLanguage: h.cfg.STT.WhisperLanguage,
+	}
+	response.OK(c, resp)
+}
+
+// UpdateSTTConfig updates the STT configuration at runtime.
+// PUT /v1/settings/stt
+func (h *SettingsHandler) UpdateSTTConfig(c *gin.Context) {
+	var req STTConfigResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request body")
+		return
+	}
+
+	// Allow setting language to "" (auto-detect) or a valid language code
+	h.cfg.STT.WhisperLanguage = req.WhisperLanguage
+
+	resp := STTConfigResponse{
+		Provider:        h.cfg.STT.Provider,
+		WhisperLanguage: h.cfg.STT.WhisperLanguage,
+	}
+	response.OK(c, resp)
+}

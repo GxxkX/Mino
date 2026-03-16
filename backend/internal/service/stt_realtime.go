@@ -16,6 +16,7 @@ func (s *STTService) NewRealtimeSession(onResult func(text string, isFinal bool)
 		return NewWhisperRealtimeSession(
 			s.config.WhisperAPIURL,
 			s.config.WhisperAPIKey,
+			s.config.WhisperLanguage,
 			onResult,
 		)
 	default:

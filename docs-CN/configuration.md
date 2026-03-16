@@ -161,6 +161,40 @@ S3 兼容对象存储的连接设置。MinIO 用于存储音频文件。
 | `TYPESENSE_HOST_PORT` | `8108` | Typesense 端口 |
 | `TYPESENSE_API_KEY` | | Typesense API 密钥 |
 
+## 说话人分离（Pyannote）
+
+Mino 支持基于 [pyannote.audio](https://github.com/pyannote/pyannote-audio)
+的说话人分离功能。启用后，系统会自动识别录音中的不同说话人，
+并将其声纹嵌入与 Milvus 中已存储的声纹进行匹配。
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `PYANNOTE_ENABLED` | `false` | 启用说话人分离 |
+| `PYANNOTE_HF_TOKEN` | | Hugging Face 访问令牌 |
+| `SPEAKER_SIMILARITY_THRESHOLD` | `0.65` | 声纹匹配的余弦相似度阈值 |
+
+> **⚠️ 注意：** Pyannote 模型属于 Hugging Face 上的**受限模型（Gated Model）**。
+> 使用前必须完成以下步骤：
+>
+> 1. 注册 [Hugging Face](https://huggingface.co) 账号。
+> 2. 访问以下每个模型页面，阅读并同意许可协议：
+>    - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+>    - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+>    - [pyannote/embedding](https://huggingface.co/pyannote/embedding)
+> 3. 在 [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+>    生成访问令牌（至少需要 `read` 权限）。
+> 4. 将令牌设置为 `.env` 文件中的 `PYANNOTE_HF_TOKEN`。
+>
+> 如果未完成上述步骤，whisper 服务将无法下载模型，
+> 说话人分离功能将不可用。
+
+启用后，需要重新构建 whisper 容器以在启动时预加载模型。
+
+```bash
+docker compose build --no-cache whisper
+docker compose up -d whisper
+```
+
 ## LangSmith
 
 LLM 可观测性和链路追踪设置。LangSmith 为可选组件，
@@ -229,6 +263,13 @@ MINIO_SECURE=false
 # Milvus
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+
+# STT
+STT_PROVIDER=whisper
+
+# 说话人分离（可选）
+PYANNOTE_ENABLED=false
+PYANNOTE_HF_TOKEN=hf_your_token_here
 ```
 
 ## 后续步骤

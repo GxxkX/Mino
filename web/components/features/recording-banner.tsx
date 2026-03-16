@@ -1,6 +1,6 @@
 'use client';
 
-import { Pause, Play, Square } from 'lucide-react';
+import { Pause, Play, Square, Users } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useAudioRecorder } from '@/hooks/use-audio-recorder';
 import { AudioVisualizer } from '@/components/features/audio-visualizer';
@@ -8,8 +8,23 @@ import { formatDuration } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
 
+/** Deterministic color for a speaker label */
+const SPEAKER_COLORS = [
+  'text-accent-blue',
+  'text-accent-rose',
+  'text-emerald-400',
+  'text-amber-400',
+  'text-violet-400',
+  'text-cyan-400',
+];
+function speakerColor(label: string): string {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) | 0;
+  return SPEAKER_COLORS[Math.abs(hash) % SPEAKER_COLORS.length];
+}
+
 export function RecordingBanner() {
-  const { isRecording: storeRecording, currentTranscript } = useAppStore();
+  const { isRecording: storeRecording, currentTranscript, diarizedSegments, speakerMatches, isDiarizing } = useAppStore();
   const recorder = useAudioRecorder();
   const t = useTranslation();
 
@@ -79,11 +94,30 @@ export function RecordingBanner() {
         barGap={1.5}
       />
 
-      {/* Live transcript */}
-      <div className="bg-surface rounded-md p-4 min-h-[60px]">
-        <p className="text-sm text-text-muted leading-relaxed">
-          {currentTranscript || t.recordingBanner.waiting}
-        </p>
+      {/* Live transcript / diarized segments */}
+      <div className="bg-surface rounded-md p-4 min-h-[60px] space-y-1.5">
+        {isDiarizing && (
+          <div className="flex items-center gap-2 text-xs text-text-muted animate-pulse">
+            <Users className="w-3.5 h-3.5" />
+            <span>{t.speakers.diarizing}</span>
+          </div>
+        )}
+
+        {diarizedSegments.length > 0 ? (
+          diarizedSegments.map((seg, i) => {
+            const name = seg.speaker_name || speakerMatches[seg.speaker]?.label || seg.speaker;
+            return (
+              <p key={i} className="text-sm leading-relaxed">
+                <span className={cn('font-medium', speakerColor(name))}>[{name}]</span>{' '}
+                <span className="text-text-muted">{seg.text}</span>
+              </p>
+            );
+          })
+        ) : (
+          <p className="text-sm text-text-muted leading-relaxed">
+            {currentTranscript || t.recordingBanner.waiting}
+          </p>
+        )}
       </div>
 
       {/* Error display */}

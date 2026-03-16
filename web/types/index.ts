@@ -101,6 +101,8 @@ export interface AppSettings {
   mcpEnabled: boolean;
   /** Recording input gain multiplier: 0.0 – 3.0 (1.0 = normal) */
   recordingGain: number;
+  /** Whisper recognition language code (e.g. "zh", "en", "" for auto-detect) */
+  whisperLanguage: string;
 }
 
 export interface SearchResultItem {
@@ -118,4 +120,30 @@ export interface SearchResponse {
   conversations: SearchResultItem[];
   memories: SearchResultItem[];
   totalFound: number;
+}
+
+// Speaker diarization types
+export interface SpeakerProfile {
+  id: string;
+  userId: string;
+  label: string;
+  sampleCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiarizedSegment {
+  speaker: string;
+  speaker_name?: string;
+  speaker_id?: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface SpeakerMatch {
+  profileId: string;
+  label: string;
+  confidence: number;
+  isNew: boolean;
 }

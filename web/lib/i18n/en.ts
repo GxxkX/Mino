@@ -21,6 +21,7 @@ const en: Dictionary = {
     audio: 'Audio',
     chat: 'Chat',
     extensions: 'Extensions',
+    speakers: 'Speakers',
     settings: 'Settings',
     navigation: 'Navigation',
   },
@@ -177,6 +178,8 @@ const en: Dictionary = {
     gainStandard: 'Standard',
     gainMute: 'Mute',
     gainWarning: 'Gain above 100% may cause audio clipping',
+    whisperLanguage: 'Recognition Language',
+    whisperLanguageAuto: 'Auto Detect',
   },
 
   // Security Settings
@@ -322,6 +325,24 @@ const en: Dictionary = {
     endpointPlaceholder: 'http://localhost:8080',
     delete: 'Delete',
     saveConfig: 'Save Config',
+  },
+
+  // Speaker / Diarization
+  speakers: {
+    title: 'Speaker Management',
+    description: 'Manage voiceprint labels for known speakers to auto-identify participants in conversations',
+    empty: 'No known speakers yet',
+    addSpeaker: 'Add Speaker',
+    labelPlaceholder: 'Enter name...',
+    rename: 'Rename',
+    deleteSpeaker: 'Delete Speaker',
+    deleteConfirm: 'Are you sure? Associated voiceprint data will also be removed.',
+    samples: ((n: number) => `${n} voiceprint samples`) as Dictionary['speakers']['samples'],
+    diarizing: 'Identifying speakers...',
+    unknownSpeaker: 'Unknown Speaker',
+    statProfiles: 'Profiles',
+    statSamples: 'Voiceprints',
+    statEnrolled: 'Enrolled',
   },
 
   // Audio Visualizer

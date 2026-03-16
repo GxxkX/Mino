@@ -138,6 +138,8 @@ services:
     environment:
       WHISPER_API_KEY: ${STT_WHISPER_API_KEY:-your_whisper_api_key}
       WHISPER_DEFAULT_MODEL: ${STT_WHISPER_MODEL:-tiny-zh}
+      PYANNOTE_ENABLED: ${PYANNOTE_ENABLED:-false}
+      PYANNOTE_HF_TOKEN: ${PYANNOTE_HF_TOKEN:-}
     volumes:
       - whisper_cache:/root/.cache
 

@@ -9,6 +9,7 @@
  */
 
 import { audioWS } from '@/lib/audio-ws';
+import type { DiarizedSegment, SpeakerMatch } from '@/types';
 
 const FFT_SIZE = 256;
 
@@ -35,6 +36,8 @@ class AudioRecorderService {
   private wsUnsub: (() => void) | null = null;
   private transcriptCallback: ((text: string, isFinal: boolean) => void) | null = null;
   private completedCallback: (() => void) | null = null;
+  private diarizedCallback: ((segments: DiarizedSegment[], speakers: Record<string, SpeakerMatch>) => void) | null = null;
+  private diarizingCallback: ((isDiarizing: boolean) => void) | null = null;
 
   /**
    * Frequency data buffer — mutated in-place at 60fps.
@@ -62,6 +65,14 @@ class AudioRecorderService {
 
   onCompleted(cb: () => void) {
     this.completedCallback = cb;
+  }
+
+  onDiarized(cb: (segments: DiarizedSegment[], speakers: Record<string, SpeakerMatch>) => void) {
+    this.diarizedCallback = cb;
+  }
+
+  onDiarizing(cb: (isDiarizing: boolean) => void) {
+    this.diarizingCallback = cb;
   }
 
   getState(): RecorderState {
@@ -162,6 +173,13 @@ class AudioRecorderService {
       this.wsUnsub = audioWS.onMessage((msg) => {
         if (msg.type === 'transcript' && msg.text) {
           this.transcriptCallback?.(msg.text, msg.is_final ?? false);
+        }
+        if (msg.type === 'status' && msg.text === 'diarizing') {
+          this.diarizingCallback?.(true);
+        }
+        if (msg.type === 'diarized') {
+          this.diarizingCallback?.(false);
+          this.diarizedCallback?.(msg.diarized_segments ?? [], msg.speakers ?? {});
         }
         if (msg.type === 'completed') {
           this.completedCallback?.();

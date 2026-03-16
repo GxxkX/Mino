@@ -21,6 +21,7 @@ import (
 type WhisperRealtimeSession struct {
 	baseURL    string
 	apiKey     string
+	language   string // e.g. "zh", "en", "" for auto-detect
 	onResult   func(text string, isFinal bool)
 	
 	mu         sync.Mutex
@@ -39,7 +40,7 @@ type WhisperRealtimeSession struct {
 }
 
 // NewWhisperRealtimeSession creates a new Whisper real-time session
-func NewWhisperRealtimeSession(baseURL, apiKey string, onResult func(text string, isFinal bool)) (*WhisperRealtimeSession, error) {
+func NewWhisperRealtimeSession(baseURL, apiKey, language string, onResult func(text string, isFinal bool)) (*WhisperRealtimeSession, error) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9000"
 	}
@@ -47,6 +48,7 @@ func NewWhisperRealtimeSession(baseURL, apiKey string, onResult func(text string
 	s := &WhisperRealtimeSession{
 		baseURL:       baseURL,
 		apiKey:        apiKey,
+		language:      language,
 		onResult:      onResult,
 		audioData:     make([]byte, 0, 1024*1024), // 1MB initial capacity
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
@@ -150,6 +152,13 @@ func (s *WhisperRealtimeSession) transcribe(ctx context.Context, audioData []byt
 	}
 	if _, err := part.Write(audioData); err != nil {
 		return "", fmt.Errorf("failed to write audio data: %w", err)
+	}
+
+	// Add language field if specified
+	if s.language != "" {
+		if err := writer.WriteField("language", s.language); err != nil {
+			return "", fmt.Errorf("failed to write language field: %w", err)
+		}
 	}
 	
 	if err := writer.Close(); err != nil {

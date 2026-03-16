@@ -166,6 +166,19 @@ func main() {
 	toolRegistry.Register(tools.NewTaskCreateBatchTool(memTaskSvc), "extract")
 	logger.Info("tool registry initialized with memory and task tools")
 
+	// Speaker service (requires Milvus for voice embeddings)
+	speakerRepo := repository.NewSpeakerRepository(db)
+	speakerSvc := service.NewSpeakerService(speakerRepo, milvusClient, &cfg.STT, logger)
+
+	// Ensure speaker embeddings collection in Milvus
+	if milvusClient != nil {
+		if err := milvusClient.EnsureSpeakerCollection(context.Background()); err != nil {
+			logger.Warnf("Milvus speaker collection init failed: %v", err)
+		} else {
+			logger.Info("Milvus speaker embeddings collection ready")
+		}
+	}
+
 	audioSvc := service.NewAudioService(convRepo, memTaskSvc, llmProvider, vectorStoreSvc, storageClient, cfg, logger)
 	chatSvc := service.NewChatService(chatRepo, convRepo, llmProvider, vectorStoreSvc, toolRegistry, logger)
 
@@ -200,7 +213,8 @@ func main() {
 	extHandler := handler.NewExtensionHandler(extRepo)
 	searchHandler := handler.NewSearchHandler(searchSvc)
 	settingsHandler := handler.NewSettingsHandler(cfg)
-	wsHandler := handler.NewWSHandler(jwtMgr, audioSvc, sttService)
+	speakerHandler := handler.NewSpeakerHandler(speakerSvc)
+	wsHandler := handler.NewWSHandler(jwtMgr, audioSvc, sttService, speakerSvc)
 
 	// Gin router
 	if !cfg.App.Debug {
@@ -269,6 +283,12 @@ func main() {
 	protected.POST("/chat/sessions/:id/messages", chatHandler.Send)
 	protected.POST("/chat/sessions/:id/messages/stream", chatHandler.SendStream)
 
+	// Speakers
+	protected.GET("/speakers", speakerHandler.List)
+	protected.POST("/speakers", speakerHandler.Register)
+	protected.PUT("/speakers/:id", speakerHandler.UpdateName)
+	protected.DELETE("/speakers/:id", speakerHandler.Delete)
+
 	// Search
 	protected.GET("/search", searchHandler.Search)
 	protected.POST("/search/reindex", searchHandler.Reindex)
@@ -278,6 +298,8 @@ func main() {
 	protected.PUT("/settings/llm", settingsHandler.UpdateLLMConfig)
 	protected.GET("/settings/cloud", settingsHandler.GetCloudConfig)
 	protected.PUT("/settings/cloud", settingsHandler.UpdateCloudConfig)
+	protected.GET("/settings/stt", settingsHandler.GetSTTConfig)
+	protected.PUT("/settings/stt", settingsHandler.UpdateSTTConfig)
 
 	// WebSocket (auth via query param)
 	v1.GET("/ws/audio", wsHandler.AudioWS)

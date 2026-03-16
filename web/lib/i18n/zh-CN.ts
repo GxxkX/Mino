@@ -19,6 +19,7 @@ const zhCN = {
     audio: '录音',
     chat: '对话',
     extensions: '扩展',
+    speakers: '说话人',
     settings: '设置',
     navigation: '导航',
   },
@@ -175,6 +176,8 @@ const zhCN = {
     gainStandard: '标准',
     gainMute: '静音',
     gainWarning: '增益大于 100% 时录音可能产生削波失真',
+    whisperLanguage: '识别语言',
+    whisperLanguageAuto: '自动检测',
   },
 
   // Security Settings
@@ -320,6 +323,24 @@ const zhCN = {
     endpointPlaceholder: 'http://localhost:8080',
     delete: '删除',
     saveConfig: '保存配置',
+  },
+
+  // Speaker / Diarization
+  speakers: {
+    title: '说话人',
+    description: '管理已知说话人的声纹标签，用于自动识别对话中的发言者',
+    empty: '暂无已知说话人',
+    addSpeaker: '添加说话人',
+    labelPlaceholder: '输入名称...',
+    rename: '重命名',
+    deleteSpeaker: '删除说话人',
+    deleteConfirm: '确定要删除此说话人吗？关联的声纹数据也会被清除。',
+    samples: (n: number) => `${n} 个声纹样本`,
+    diarizing: '正在识别说话人...',
+    unknownSpeaker: '未知说话人',
+    statProfiles: '声纹标签',
+    statSamples: '声纹样本',
+    statEnrolled: '已注册',
   },
 
   // Audio Visualizer

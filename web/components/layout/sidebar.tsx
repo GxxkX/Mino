@@ -10,7 +10,8 @@ import {
   Mic, 
   MessageCircle, 
   Settings, 
-  Puzzle
+  Puzzle,
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n';
@@ -24,6 +25,7 @@ export function Sidebar() {
     { href: '/dashboard/memories', label: t.nav.memories, icon: Brain },
     { href: '/dashboard/tasks', label: t.nav.tasks, icon: CheckSquare },
     { href: '/dashboard/audio', label: t.nav.audio, icon: Mic },
+    { href: '/dashboard/speakers', label: t.nav.speakers, icon: Users },
     { href: '/dashboard/chat', label: t.nav.chat, icon: MessageCircle },
     { href: '/dashboard/extensions', label: t.nav.extensions, icon: Puzzle },
   ];

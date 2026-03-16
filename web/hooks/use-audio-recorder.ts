@@ -14,7 +14,7 @@ import { conversationsApi } from '@/lib/api';
  * directly via a ref, bypassing React's render cycle entirely.
  */
 export function useAudioRecorder() {
-  const { setIsRecording, setCurrentTranscript, setConversations, settings } = useAppStore();
+  const { setIsRecording, setCurrentTranscript, setConversations, setDiarizedSegments, setSpeakerMatches, setIsDiarizing, settings } = useAppStore();
 
   // Wire callbacks once — use refs to avoid stale closures
   const callbacksWired = useRef(false);
@@ -22,6 +22,13 @@ export function useAudioRecorder() {
     callbacksWired.current = true;
 
     audioRecorder.onTranscript((text) => setCurrentTranscript(text));
+
+    audioRecorder.onDiarized((segments, speakers) => {
+      setDiarizedSegments(segments);
+      setSpeakerMatches(speakers);
+    });
+
+    audioRecorder.onDiarizing((v) => setIsDiarizing(v));
 
     audioRecorder.onCompleted(() => {
       // Re-fetch conversations list when backend finishes processing

@@ -24,6 +24,7 @@ func NewSTTService(cfg *config.STTConfig) (*STTService, error) {
 			cfg.WhisperAPIURL,
 			cfg.WhisperAPIKey,
 			cfg.WhisperModel,
+			cfg.WhisperLanguage,
 		)
 
 	default:
@@ -44,6 +45,16 @@ func (s *STTService) TranscribeStream(ctx context.Context, audioStream io.Reader
 // TranscribeFile performs batch transcription on a complete audio file
 func (s *STTService) TranscribeFile(ctx context.Context, audioData []byte, format string) (string, error) {
 	return s.provider.TranscribeFile(ctx, audioData, format)
+}
+
+// DiarizeFile performs speaker diarization + transcription on a complete audio file
+func (s *STTService) DiarizeFile(ctx context.Context, audioData []byte, format string) (*DiarizedResult, error) {
+	return s.provider.DiarizeFile(ctx, audioData, format)
+}
+
+// IsDiarizationEnabled returns whether pyannote diarization is configured
+func (s *STTService) IsDiarizationEnabled() bool {
+	return s.config.PyannoteEnabled
 }
 
 // Close releases any resources held by the service
